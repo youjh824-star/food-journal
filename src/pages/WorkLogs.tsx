@@ -118,7 +118,7 @@ function WorkLogForm({ initial, onSave, onCancel }: {
 }
 
 // ── 행 카드 ─────────────────────────────────────────────────────────────────
-function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkLog) => void; onDelete: (id: number) => void }) {
+function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkLog) => void; onDelete: (id: number, withSamples: boolean) => void }) {
   const [open, setOpen] = useState(false)
   const [delConfirm, setDelConfirm] = useState(false)
   return (
@@ -163,12 +163,16 @@ function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkL
               <Pencil className="w-3.5 h-3.5" />수정
             </button>
             {delConfirm ? (
-              <div className="flex items-center gap-2 ml-auto">
-                <span className="text-xs text-red-400">삭제하시겠습니까?</span>
-                <button onClick={(e) => { e.stopPropagation(); onDelete(log.id) }}
-                  className="text-xs text-white bg-red-600 hover:bg-red-500 px-2 py-1 rounded-lg transition-colors">삭제</button>
-                <button onClick={(e) => { e.stopPropagation(); setDelConfirm(false) }}
-                  className="text-xs text-slate-400 hover:text-white">취소</button>
+              <div className="flex flex-col gap-1.5 ml-auto">
+                <p className="text-xs text-red-400 text-right">업무일지를 삭제하시겠습니까?</p>
+                <div className="flex gap-1 justify-end">
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(log.id, false) }}
+                    className="text-xs text-white bg-orange-600 hover:bg-orange-500 px-2 py-1 rounded-lg transition-colors">일지만 삭제</button>
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(log.id, true) }}
+                    className="text-xs text-white bg-red-700 hover:bg-red-600 px-2 py-1 rounded-lg transition-colors">일지+샘플 삭제</button>
+                  <button onClick={(e) => { e.stopPropagation(); setDelConfirm(false) }}
+                    className="text-xs text-slate-400 hover:text-white px-2 py-1">취소</button>
+                </div>
               </div>
             ) : (
               <button onClick={(e) => { e.stopPropagation(); setDelConfirm(true) }}
@@ -237,8 +241,8 @@ export default function WorkLogs() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    await deleteWorkLog(id)
+  const handleDelete = async (id: number, withSamples = false) => {
+    await deleteWorkLog(id, withSamples)
     setLogs(prev => prev.filter(l => l.id !== id))
     setTotal(prev => prev - 1)
   }

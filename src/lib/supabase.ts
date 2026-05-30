@@ -29,12 +29,28 @@ export interface WorkLog {
 export interface Sample {
   id: number
   sample_id?: string
+  sample_name?: string
   project_name?: string
   test_item?: string
+  result_value?: string
+  unit?: string
+  analysis_date?: string
+  receipt_date?: string
+  receipt_number?: string
+  batch_info?: string
+  status?: string
+  is_retest?: boolean
+  is_abnormal?: boolean
+  abnormal_reason?: string
+  is_duplicate?: boolean
+  base_sample_id?: string
+  previous_result_value?: string
+  result_change?: string
+  source_file?: string
+  // 모바일 폼 전용 (Supabase에 없는 필드 대체용)
   sample_count?: number
   receive_date?: string
   deadline?: string
-  status?: string
   notes?: string
   created_at: string
 }
@@ -118,7 +134,14 @@ export async function updateWorkLog(id: number, payload: Partial<WorkLog>) {
   if (error) throw new Error(error.message)
 }
 
-export async function deleteWorkLog(id: number) {
+export async function deleteWorkLog(id: number, deleteRelatedSamples = false) {
+  if (deleteRelatedSamples) {
+    // 해당 업무일지의 project_name 조회 후 관련 샘플 삭제
+    const { data: log } = await supabase.from('work_logs').select('project_name').eq('id', id).single()
+    if (log?.project_name) {
+      await supabase.from('samples').delete().eq('project_name', log.project_name)
+    }
+  }
   const { error } = await supabase.from('work_logs').delete().eq('id', id)
   if (error) throw new Error(error.message)
 }
@@ -204,9 +227,14 @@ export async function fetchSamples(opts: {
   let q = supabase
     .from('samples')
     .select('*', { count: 'exact' })
+    .order('analysis_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .range(page * pageSize, (page + 1) * pageSize - 1)
-  if (search) q = q.ilike('project_name', `%${search}%`)
+  if (search) {
+    q = q.or(
+      `project_name.ilike.%${search}%,sample_name.ilike.%${search}%,sample_id.ilike.%${search}%,test_item.ilike.%${search}%,receipt_number.ilike.%${search}%`
+    )
+  }
   const { data, count } = await q
   return { data: (data ?? []) as Sample[], count: count ?? 0 }
 }
