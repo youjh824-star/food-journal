@@ -107,6 +107,22 @@ export async function fetchDashboardStats() {
   }
 }
 
+export async function createWorkLog(payload: Partial<WorkLog>): Promise<WorkLog> {
+  const { data, error } = await supabase.from('work_logs').insert([payload]).select().single()
+  if (error) throw new Error(error.message)
+  return data as WorkLog
+}
+
+export async function updateWorkLog(id: number, payload: Partial<WorkLog>) {
+  const { error } = await supabase.from('work_logs').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteWorkLog(id: number) {
+  const { error } = await supabase.from('work_logs').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
 export async function fetchRecentWorkLogs(limit = 10): Promise<WorkLog[]> {
   const { data } = await supabase
     .from('work_logs')
@@ -161,6 +177,22 @@ export async function fetchMethods(testItem?: string): Promise<ExperimentMethod[
   if (testItem) q = q.eq('test_item', testItem)
   const { data } = await q
   return (data ?? []) as ExperimentMethod[]
+}
+
+export async function createSample(payload: Partial<Sample>): Promise<Sample> {
+  const { data, error } = await supabase.from('samples').insert([payload]).select().single()
+  if (error) throw new Error(error.message)
+  return data as Sample
+}
+
+export async function updateSample(id: number, payload: Partial<Sample>) {
+  const { error } = await supabase.from('samples').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteSample(id: number) {
+  const { error } = await supabase.from('samples').delete().eq('id', id)
+  if (error) throw new Error(error.message)
 }
 
 export async function fetchSamples(opts: {
