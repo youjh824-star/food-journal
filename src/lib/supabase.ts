@@ -312,6 +312,189 @@ export async function deleteTodo(id: number) {
   if (error) throw new Error(error.message)
 }
 
+// ── 달력 이벤트 ───────────────────────────────────────────────────────────────
+
+export interface CalendarEvent {
+  id: number
+  title: string
+  event_date: string
+  category?: string
+  color?: string
+  description?: string
+  created_at?: string
+}
+
+export async function fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+  const { data } = await supabase
+    .from('calendar_events')
+    .select('*')
+    .gte('event_date', startDate)
+    .lte('event_date', endDate)
+    .order('event_date')
+  return (data ?? []) as CalendarEvent[]
+}
+
+export async function createCalendarEvent(payload: Partial<CalendarEvent>): Promise<CalendarEvent> {
+  const { data, error } = await supabase.from('calendar_events').insert([payload]).select().single()
+  if (error) throw new Error(error.message)
+  return data as CalendarEvent
+}
+
+export async function updateCalendarEvent(id: number, payload: Partial<CalendarEvent>) {
+  const { error } = await supabase.from('calendar_events').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteCalendarEvent(id: number) {
+  const { error } = await supabase.from('calendar_events').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// ── 달력용 업무 데이터 (날짜별 집계) ─────────────────────────────────────────
+
+export interface CalendarDayData {
+  date: string
+  items: { test_item: string; sample_count: number; project: string; equipment: string }[]
+  total_samples: number
+}
+
+export async function fetchCalendarWorkData(startDate: string, endDate: string): Promise<CalendarDayData[]> {
+  const { data } = await supabase
+    .from('work_logs')
+    .select('log_date,test_item,sample_count,project_name,equipment_name')
+    .gte('log_date', startDate)
+    .lte('log_date', endDate)
+    .order('log_date')
+
+  const dayMap: Record<string, CalendarDayData> = {}
+  for (const row of (data ?? [])) {
+    const d = String(row.log_date).slice(0, 10)
+    if (!dayMap[d]) dayMap[d] = { date: d, items: [], total_samples: 0 }
+    dayMap[d].items.push({
+      test_item: row.test_item ?? '',
+      sample_count: row.sample_count ?? 0,
+      project: row.project_name ?? '',
+      equipment: row.equipment_name ?? '',
+    })
+    dayMap[d].total_samples += row.sample_count ?? 0
+  }
+  return Object.values(dayMap)
+}
+
+// ── 대시보드 전체 데이터 ───────────────────────────────────────────────────────
+
+export interface DashboardFullData {
+  kpi: { today_workload: number; week_workload: number; month_workload: number; retest_rate: number }
+  todos: Array<{ id: number; title: string; priority: string; completed: boolean }>
+  anomalies: Array<{ id: number; description: string; severity: string }>
+  expiring_reagents: Array<{ id: number; name: string; expiry_date: string }>
+  insights: string[]
+  week_trend: Array<{ label: string; samples: number }>
+  top_test_items: Array<{ name: string; value: number }>
+}
+
+function generateInsights(
+  weekLogs: number, monthLogs: number,
+  topItem: string | undefined, anomalyCount: number, expiringCount: number,
+): string[] {
+  const msgs: string[] = []
+  if (weekLogs > 0) msgs.push(`이번 주 ${weekLogs}건의 업무일지가 등록되었습니다.`)
+  if (topItem) msgs.push(`이번 달 가장 많이 분석한 시험항목은 "${topItem}"입니다.`)
+  if (anomalyCount > 0) msgs.push(`현재 ${anomalyCount}건의 장비 이상이 확인되었습니다. 점검이 필요합니다.`)
+  if (expiringCount > 0) msgs.push(`유효기간 임박 시약이 ${expiringCount}건 있습니다. 확인하세요.`)
+  if (monthLogs >= 20) msgs.push('이번 달 분석량이 활발합니다. 수고 많으십니다!')
+  if (msgs.length === 0) msgs.push('데이터가 쌓이면 인사이트가 표시됩니다.')
+  return msgs
+}
+
+export async function fetchDashboardFull(): Promise<DashboardFullData> {
+  const today = new Date().toISOString().slice(0, 10)
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const in30Days = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+  const todayDow = new Date().getDay()
+
+  const [todayLogsRes, weekLogsRes, monthLogsRes, todosRes, openIssuesRes, reagentsRes, allEquipmentIssues] = await Promise.all([
+    supabase.from('work_logs').select('sample_count,workload').eq('log_date', today),
+    supabase.from('work_logs').select('log_date,sample_count,workload,test_item').gte('log_date', weekAgo),
+    supabase.from('work_logs').select('sample_count,workload,test_item').gte('log_date', monthAgo),
+    supabase.from('todo_items').select('id,title,priority,is_done,schedule_type,recurrence_weekday').order('priority').order('created_at'),
+    supabase.from('equipment_issues').select('id,title,issue_type,status').eq('status', 'open').order('created_at', { ascending: false }).limit(10),
+    supabase.from('reagents').select('id,name,expiry_date').lte('expiry_date', in30Days).gte('expiry_date', today).order('expiry_date').limit(10),
+    supabase.from('equipment_issues').select('id,equipment_id,status').eq('status', 'open'),
+  ])
+
+  const todayWorkload = (todayLogsRes.data ?? []).reduce((s, r) => s + (r.workload ?? r.sample_count ?? 0), 0)
+  const weekWorkload  = (weekLogsRes.data  ?? []).reduce((s, r) => s + (r.workload ?? r.sample_count ?? 0), 0)
+  const monthWorkload = (monthLogsRes.data ?? []).reduce((s, r) => s + (r.workload ?? r.sample_count ?? 0), 0)
+
+  // Issue rate = open issues / month logs * 100
+  const retestRate = monthLogsRes.data?.length
+    ? Math.round(((allEquipmentIssues.data?.length ?? 0) / monthLogsRes.data.length) * 100)
+    : 0
+
+  // Today's todos: 'daily', or weekly matching today's weekday, or 'once' not done
+  const allTodos = (todosRes.data ?? []) as TodoItem[]
+  const todayTodos = allTodos.filter(t => {
+    if (t.is_done) return false
+    if (t.schedule_type === 'daily') return true
+    if (t.schedule_type === 'weekly' && t.recurrence_weekday === todayDow) return true
+    if (t.schedule_type === 'once') return true
+    return false
+  }).slice(0, 5)
+
+  // Anomalies
+  const anomalies = (openIssuesRes.data ?? []).map(i => ({
+    id: i.id,
+    description: i.title,
+    severity: i.issue_type === 'breakdown' ? 'error' : 'warning',
+  }))
+
+  // Expiring reagents
+  const expiringReagents = (reagentsRes.data ?? []).map(r => ({
+    id: r.id, name: r.name, expiry_date: r.expiry_date as string,
+  }))
+
+  // Weekly trend (last 7 days)
+  const weekData = weekLogsRes.data ?? []
+  const trendMap: Record<string, number> = {}
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000)
+    const key = d.toISOString().slice(0, 10)
+    trendMap[key] = 0
+  }
+  weekData.forEach(r => {
+    const key = String(r.log_date).slice(0, 10)
+    if (key in trendMap) trendMap[key] += r.sample_count ?? 0
+  })
+  const week_trend = Object.entries(trendMap).map(([date, samples]) => ({
+    label: date.slice(5), samples,
+  }))
+
+  // Top test items
+  const itemCounts: Record<string, number> = {}
+  ;(monthLogsRes.data ?? []).forEach(r => {
+    if (r.test_item) itemCounts[r.test_item] = (itemCounts[r.test_item] ?? 0) + (r.sample_count ?? 1)
+  })
+  const top_test_items = Object.entries(itemCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value]) => ({ name, value }))
+
+  const topItem = top_test_items[0]?.name
+  const insights = generateInsights(weekLogsRes.data?.length ?? 0, monthLogsRes.data?.length ?? 0, topItem, anomalies.length, expiringReagents.length)
+
+  return {
+    kpi: { today_workload: todayWorkload, week_workload: weekWorkload, month_workload: monthWorkload, retest_rate: retestRate },
+    todos: todayTodos.map(t => ({ id: t.id, title: t.title, priority: t.priority, completed: t.is_done })),
+    anomalies,
+    expiring_reagents: expiringReagents,
+    insights,
+    week_trend,
+    top_test_items,
+  }
+}
+
 // ── 상세 통계 ─────────────────────────────────────────────────────────────────
 
 export async function fetchDetailedStats(days = 30) {
