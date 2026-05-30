@@ -218,6 +218,13 @@ export async function deleteSample(id: number) {
   if (error) throw new Error(error.message)
 }
 
+export async function deleteAllSamples(): Promise<number> {
+  // id > 0 조건으로 전체 삭제 (RLS 우회)
+  const { error, count } = await supabase.from('samples').delete({ count: 'exact' }).gt('id', 0)
+  if (error) throw new Error(error.message)
+  return count ?? 0
+}
+
 export async function fetchSamples(opts: {
   search?: string
   page?: number

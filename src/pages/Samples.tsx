@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Search, X, FlaskConical, Plus, Pencil, Trash2, Save, ChevronDown, ChevronUp, AlertTriangle, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
-import { fetchSamples, createSample, updateSample, deleteSample, Sample } from '../lib/supabase'
+import { fetchSamples, createSample, updateSample, deleteSample, deleteAllSamples, Sample } from '../lib/supabase'
 import Spinner from '../components/Spinner'
 
 const STATUS_OPTIONS = ['접수', '진행중', '완료', '반려']
@@ -255,6 +255,44 @@ function SampleCard({ s, onEdit, onDelete }: {
 // ── 필터 탭 ──────────────────────────────────────────────────────────────────
 type FilterTab = 'all' | 'retest' | 'abnormal'
 
+// ── 전체 삭제 확인 모달 ───────────────────────────────────────────────────────
+function BulkDeleteModal({ total, onClose, onConfirm }: {
+  total: number; onClose: () => void; onConfirm: () => void
+}) {
+  const [confirm, setConfirm] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}>
+      <div className="bg-navy-800 border border-red-500/40 rounded-2xl w-full max-w-sm p-5 space-y-4"
+        onClick={e => e.stopPropagation()}>
+        <div>
+          <h3 className="text-base font-semibold text-red-400 mb-1">⚠️ 샘플 전체 삭제</h3>
+          <p className="text-sm text-slate-300">
+            전체 <span className="text-red-400 font-bold">{total.toLocaleString()}건</span>의 샘플 데이터를 삭제합니다.
+          </p>
+          <p className="text-xs text-slate-500 mt-1">삭제된 데이터는 복구할 수 없습니다.</p>
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 mb-1.5 block">확인을 위해 <span className="text-red-400 font-medium">삭제</span> 를 입력하세요</label>
+          <input value={confirm} onChange={e => setConfirm(e.target.value)}
+            placeholder="삭제" autoFocus
+            className="w-full bg-[#0f172a] border border-red-500/40 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 outline-none focus:border-red-400 transition-colors" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl bg-navy-700 hover:bg-navy-600 text-slate-300 text-sm font-medium transition-colors">
+            취소
+          </button>
+          <button onClick={onConfirm} disabled={confirm !== '삭제'}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+            전체 삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function Samples() {
   const [search, setSearch] = useState('')
@@ -266,6 +304,8 @@ export default function Samples() {
   const [hasMore, setHasMore] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<Sample | null>(null)
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const PAGE_SIZE = 30
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
@@ -312,6 +352,14 @@ export default function Samples() {
 
   const startEdit = (s: Sample) => { setEditTarget(s); setShowForm(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
+  const handleBulkDelete = async () => {
+    setDeleting(true)
+    try {
+      await deleteAllSamples()
+      setSamples([]); setTotal(0); setHasMore(false); setShowBulkDelete(false)
+    } catch (e) { alert('삭제 실패: ' + (e as Error).message) } finally { setDeleting(false) }
+  }
+
   // 탭 필터
   const filtered = filterTab === 'retest' ? samples.filter(s => s.is_retest)
     : filterTab === 'abnormal' ? samples.filter(s => s.is_abnormal)
@@ -322,6 +370,9 @@ export default function Samples() {
 
   return (
     <div className="flex flex-col h-full">
+      {showBulkDelete && (
+        <BulkDeleteModal total={total} onClose={() => setShowBulkDelete(false)} onConfirm={handleBulkDelete} />
+      )}
       {/* 헤더 */}
       <div className="px-4 pt-5 pb-3 bg-[#0f172a] border-b border-navy-700 space-y-3">
         <div className="flex items-center justify-between">
@@ -338,6 +389,12 @@ export default function Samples() {
               className="p-1.5 rounded-lg border border-navy-600 text-slate-400 hover:text-white hover:border-slate-500 transition-colors">
               <RefreshCw className="w-4 h-4" />
             </button>
+            {total > 0 && (
+              <button onClick={() => setShowBulkDelete(true)} disabled={deleting} title="전체 삭제"
+                className="p-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             <button onClick={() => { setShowForm(!showForm); setEditTarget(null) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white transition-colors">
               <Plus className="w-3.5 h-3.5" />추가

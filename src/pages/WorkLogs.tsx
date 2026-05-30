@@ -117,73 +117,105 @@ function WorkLogForm({ initial, onSave, onCancel }: {
   )
 }
 
+// ── 삭제 확인 모달 ───────────────────────────────────────────────────────────
+function DeleteModal({ log, onClose, onDelete }: {
+  log: WorkLog; onClose: () => void; onDelete: (id: number, withSamples: boolean) => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}>
+      <div className="bg-navy-800 border border-navy-600 rounded-2xl w-full max-w-sm p-5 space-y-4"
+        onClick={e => e.stopPropagation()}>
+        <div>
+          <h3 className="text-base font-semibold text-white mb-1">업무일지 삭제</h3>
+          <p className="text-sm text-slate-400">
+            <span className="text-white font-medium">{log.project_name}</span>
+            {log.log_date && <span className="text-slate-500 text-xs ml-2">({log.log_date})</span>}
+          </p>
+        </div>
+        <p className="text-xs text-slate-400 bg-navy-900/60 rounded-lg px-3 py-2">
+          삭제 방법을 선택하세요. 삭제된 데이터는 복구할 수 없습니다.
+        </p>
+        <div className="space-y-2">
+          <button onClick={() => onDelete(log.id, false)}
+            className="w-full text-left px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 transition-colors">
+            <p className="text-sm font-medium text-orange-400">업무일지만 삭제</p>
+            <p className="text-xs text-slate-400 mt-0.5">관련 샘플 데이터는 유지됩니다.</p>
+          </button>
+          <button onClick={() => onDelete(log.id, true)}
+            className="w-full text-left px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors">
+            <p className="text-sm font-medium text-red-400">업무일지 + 관련 샘플 삭제</p>
+            <p className="text-xs text-slate-400 mt-0.5">같은 프로젝트의 샘플 데이터도 함께 삭제됩니다.</p>
+          </button>
+        </div>
+        <button onClick={onClose}
+          className="w-full py-2.5 rounded-xl bg-navy-700 hover:bg-navy-600 text-slate-300 text-sm font-medium transition-colors">
+          취소
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── 행 카드 ─────────────────────────────────────────────────────────────────
 function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkLog) => void; onDelete: (id: number, withSamples: boolean) => void }) {
   const [open, setOpen] = useState(false)
-  const [delConfirm, setDelConfirm] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   return (
-    <div className="bg-navy-800 border border-navy-600 rounded-xl overflow-hidden">
-      <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={() => setOpen(!open)}>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium text-white text-sm truncate max-w-[160px]">{log.project_name}</p>
-            {log.status && (
-              <span className={clsx('text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0',
-                STATUS_COLORS[log.status] ?? 'bg-slate-700 text-slate-300')}>
-                {log.status}
-              </span>
-            )}
+    <>
+      {showDeleteModal && (
+        <DeleteModal log={log} onClose={() => setShowDeleteModal(false)}
+          onDelete={(id, ws) => { setShowDeleteModal(false); onDelete(id, ws) }} />
+      )}
+      <div className="bg-navy-800 border border-navy-600 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={() => setOpen(!open)}>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-white text-sm truncate max-w-[160px]">{log.project_name}</p>
+              {log.status && (
+                <span className={clsx('text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0',
+                  STATUS_COLORS[log.status] ?? 'bg-slate-700 text-slate-300')}>
+                  {log.status}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {log.log_date}{log.test_item && ` · ${log.test_item}`}{log.sample_count != null && ` · ${log.sample_count}건`}
+            </p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {log.log_date}{log.test_item && ` · ${log.test_item}`}{log.sample_count != null && ` · ${log.sample_count}건`}
-          </p>
+          {open ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
         </div>
-        {open ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
-      </div>
 
-      {open && (
-        <div className="border-t border-navy-600 px-4 pb-4 pt-3 space-y-3">
-          <div className="space-y-2 text-xs text-slate-300">
-            {([['시험항목', log.test_item], ['장비', log.equipment_name], ['담당자', log.operator],
-               ['샘플 수', log.sample_count != null ? `${log.sample_count}건` : null],
-               ['업무량', log.workload != null ? `${log.workload}` : null],
-               ['소요시간', log.duration_hours != null ? `${log.duration_hours}시간` : null],
-               ['메모', log.notes]] as [string, string | null | undefined][]).map(([label, value]) =>
-              value ? (
-                <div key={label} className="flex gap-2">
-                  <span className="text-slate-500 w-16 flex-shrink-0">{label}</span>
-                  <span className="flex-1 whitespace-pre-wrap">{value}</span>
-                </div>
-              ) : null
-            )}
-          </div>
-          <div className="flex gap-2 pt-1 border-t border-navy-700">
-            <button onClick={(e) => { e.stopPropagation(); onEdit(log) }}
-              className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-lg transition-colors">
-              <Pencil className="w-3.5 h-3.5" />수정
-            </button>
-            {delConfirm ? (
-              <div className="flex flex-col gap-1.5 ml-auto">
-                <p className="text-xs text-red-400 text-right">업무일지를 삭제하시겠습니까?</p>
-                <div className="flex gap-1 justify-end">
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(log.id, false) }}
-                    className="text-xs text-white bg-orange-600 hover:bg-orange-500 px-2 py-1 rounded-lg transition-colors">일지만 삭제</button>
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(log.id, true) }}
-                    className="text-xs text-white bg-red-700 hover:bg-red-600 px-2 py-1 rounded-lg transition-colors">일지+샘플 삭제</button>
-                  <button onClick={(e) => { e.stopPropagation(); setDelConfirm(false) }}
-                    className="text-xs text-slate-400 hover:text-white px-2 py-1">취소</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={(e) => { e.stopPropagation(); setDelConfirm(true) }}
+        {open && (
+          <div className="border-t border-navy-600 px-4 pb-4 pt-3 space-y-3">
+            <div className="space-y-2 text-xs text-slate-300">
+              {([['시험항목', log.test_item], ['장비', log.equipment_name], ['담당자', log.operator],
+                 ['샘플 수', log.sample_count != null ? `${log.sample_count}건` : null],
+                 ['업무량', log.workload != null ? `${log.workload}` : null],
+                 ['소요시간', log.duration_hours != null ? `${log.duration_hours}시간` : null],
+                 ['메모', log.notes]] as [string, string | null | undefined][]).map(([label, value]) =>
+                value ? (
+                  <div key={label} className="flex gap-2">
+                    <span className="text-slate-500 w-16 flex-shrink-0">{label}</span>
+                    <span className="flex-1 whitespace-pre-wrap">{value}</span>
+                  </div>
+                ) : null
+              )}
+            </div>
+            <div className="flex gap-2 pt-1 border-t border-navy-700">
+              <button onClick={(e) => { e.stopPropagation(); onEdit(log) }}
+                className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                <Pencil className="w-3.5 h-3.5" />수정
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setShowDeleteModal(true) }}
                 className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors ml-auto">
                 <Trash2 className="w-3.5 h-3.5" />삭제
               </button>
-            )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   )
 }
 
