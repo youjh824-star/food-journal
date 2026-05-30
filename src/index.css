@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    background-color: #0b1120;
+    color: #e2e8f0;
+    -webkit-font-smoothing: antialiased;
+    font-family: 'Malgun Gothic', '맑은 고딕', system-ui, sans-serif;
+  }
+
+  /* 모바일 safe area */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* 스크롤바 숨기기 (필터 탭 등) */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* date input 색상 */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.6);
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  .text-accent {
+    color: #06b6d4;
+  }
+  .bg-accent {
+    background-color: #06b6d4;
+  }
+}
