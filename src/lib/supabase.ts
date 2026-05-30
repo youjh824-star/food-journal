@@ -47,6 +47,11 @@ export interface Equipment {
   analysis_items?: string
   status?: string
   last_maintenance?: string
+  next_maintenance?: string
+  notes?: string
+  open_issue_count?: number
+  is_abnormal?: boolean
+  total_usage_hours?: number
 }
 
 export interface ExperimentMethod {
@@ -172,4 +177,157 @@ export async function fetchSamples(opts: {
   if (search) q = q.ilike('project_name', `%${search}%`)
   const { data, count } = await q
   return { data: (data ?? []) as Sample[], count: count ?? 0 }
+}
+
+// ── 장비 ─────────────────────────────────────────────────────────────────────
+
+export interface EquipmentIssue {
+  id: number
+  equipment_id: number
+  title: string
+  description?: string
+  issue_type: string
+  status: string
+  occurred_at?: string
+  repaired_at?: string
+  notes?: string
+  created_at: string
+}
+
+export async function fetchEquipmentIssues(equipmentId: number): Promise<EquipmentIssue[]> {
+  const { data } = await supabase
+    .from('equipment_issues')
+    .select('*')
+    .eq('equipment_id', equipmentId)
+    .order('occurred_at', { ascending: false })
+  return (data ?? []) as EquipmentIssue[]
+}
+
+export async function createEquipment(payload: Partial<Equipment>) {
+  const { data, error } = await supabase.from('equipment').insert([payload]).select().single()
+  if (error) throw new Error(error.message)
+  return data as Equipment
+}
+
+export async function updateEquipment(id: number, payload: Partial<Equipment>) {
+  const { error } = await supabase.from('equipment').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteEquipment(id: number) {
+  const { error } = await supabase.from('equipment').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createEquipmentIssue(payload: Partial<EquipmentIssue>) {
+  const { error } = await supabase.from('equipment_issues').insert([payload])
+  if (error) throw new Error(error.message)
+}
+
+export async function updateEquipmentIssue(id: number, payload: Partial<EquipmentIssue>) {
+  const { error } = await supabase.from('equipment_issues').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteEquipmentIssue(id: number) {
+  const { error } = await supabase.from('equipment_issues').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// ── 시약 ─────────────────────────────────────────────────────────────────────
+
+export interface Reagent {
+  id: number
+  name: string
+  management_number?: string
+  concentration?: string
+  stock_amount: number
+  stock_unit: string
+  min_stock: number
+  expiry_date?: string
+  open_date?: string
+  manufacture_date?: string
+  manufacturer?: string
+  lot_number?: string
+  notes?: string
+  created_at: string
+}
+
+export async function fetchReagents(): Promise<Reagent[]> {
+  const { data } = await supabase.from('reagents').select('*').order('name')
+  return (data ?? []) as Reagent[]
+}
+
+export async function createReagent(payload: Partial<Reagent>) {
+  const { error } = await supabase.from('reagents').insert([payload])
+  if (error) throw new Error(error.message)
+}
+
+export async function updateReagent(id: number, payload: Partial<Reagent>) {
+  const { error } = await supabase.from('reagents').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteReagent(id: number) {
+  const { error } = await supabase.from('reagents').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// ── 할 일 ─────────────────────────────────────────────────────────────────────
+
+export interface TodoItem {
+  id: number
+  title: string
+  schedule_type: string
+  priority: string
+  is_done: boolean
+  done_date?: string
+  recurrence_weekday?: number
+  recurrence_day?: number
+  notes?: string
+  created_at: string
+}
+
+export async function fetchTodos(): Promise<TodoItem[]> {
+  const { data } = await supabase
+    .from('todo_items')
+    .select('*')
+    .order('priority')
+    .order('created_at')
+  return (data ?? []) as TodoItem[]
+}
+
+export async function createTodo(payload: Partial<TodoItem>) {
+  const { error } = await supabase.from('todo_items').insert([payload])
+  if (error) throw new Error(error.message)
+}
+
+export async function updateTodo(id: number, payload: Partial<TodoItem>) {
+  const { error } = await supabase.from('todo_items').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteTodo(id: number) {
+  const { error } = await supabase.from('todo_items').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// ── 상세 통계 ─────────────────────────────────────────────────────────────────
+
+export async function fetchDetailedStats(days = 30) {
+  const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const { data } = await supabase
+    .from('work_logs')
+    .select('log_date,sample_count,workload,equipment_name,test_item,project_name,duration_hours')
+    .gte('log_date', from)
+    .order('log_date')
+  return (data ?? []) as Array<{
+    log_date: string
+    sample_count?: number
+    workload?: number
+    equipment_name?: string
+    test_item?: string
+    project_name?: string
+    duration_hours?: number
+  }>
 }

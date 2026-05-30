@@ -1,181 +1,197 @@
 import { useEffect, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, LineChart, Line,
 } from 'recharts'
-import { format, parseISO, startOfMonth } from 'date-fns'
+import { format, parseISO, startOfWeek, startOfDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { fetchMonthlyStats, fetchEquipment, Equipment } from '../lib/supabase'
+import { fetchDetailedStats, fetchEquipment, Equipment } from '../lib/supabase'
 import Spinner from '../components/Spinner'
 
-const COLORS = ['#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#3b82f6']
+const COLORS = ['#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#3b82f6', '#f97316']
 
-function groupByMonth(rows: { log_date: string; sample_count?: number }[]) {
-  const map = new Map<string, { month: string; count: number; samples: number }>()
-  for (const r of rows) {
-    const key = format(startOfMonth(parseISO(r.log_date)), 'yyyy-MM')
-    const label = format(startOfMonth(parseISO(r.log_date)), 'M월', { locale: ko })
-    const cur = map.get(key) ?? { month: label, count: 0, samples: 0 }
-    cur.count += 1
-    cur.samples += r.sample_count ?? 0
-    map.set(key, cur)
+const TooltipStyle = { backgroundColor: '#1a2438', border: '1px solid #243048', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }
+const tick = { fill: '#94a3b8', fontSize: 11 }
+
+type Row = { log_date: string; sample_count?: number; workload?: number; equipment_name?: string; test_item?: string; project_name?: string }
+
+function groupByDay(rows: Row[], days = 30) {
+  const map = new Map<string, number>()
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000)
+    map.set(d.toISOString().slice(0, 10), 0)
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, v]) => v)
-}
-
-function groupByEquipment(rows: { log_date: string }[], equipment: Equipment[]) {
-  // equipment_name 분포 — rows에 equipment_name이 있으면 좋지만
-  // fetchMonthlyStats는 log_date + sample_count만 가져옴
-  // 여기서는 equipment 수 표시만 활용
-  return equipment.slice(0, 7).map((eq, i) => ({
-    name: eq.name,
-    value: 1,
-    color: COLORS[i % COLORS.length],
+  for (const r of rows) { map.set(r.log_date, (map.get(r.log_date) ?? 0) + 1) }
+  return [...map.entries()].map(([date, value]) => ({
+    name: format(parseISO(date), 'M/d'), value,
   }))
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null
+function groupByWeek(rows: Row[]) {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    const w = format(startOfWeek(parseISO(r.log_date), { locale: ko }), 'M/d', { locale: ko })
+    map.set(w, (map.get(w) ?? 0) + 1)
+  }
+  return [...map.entries()].slice(-8).map(([name, value]) => ({ name, value }))
+}
+
+function groupByField(rows: Row[], field: keyof Row, top = 8) {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    const key = (r[field] as string) || '기타'
+    map.set(key, (map.get(key) ?? 0) + 1)
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, top)
+    .map(([name, value]) => ({ name, value }))
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-navy-700 border border-navy-600 rounded-lg px-3 py-2 text-xs shadow-lg">
-      <p className="text-white font-semibold mb-1">{label}</p>
-      {payload.map((p: any) => (
-        <p key={p.dataKey} style={{ color: p.fill || p.color }}>
-          {p.name}: {p.value.toLocaleString()}
-        </p>
-      ))}
+    <div className="bg-navy-800 border border-navy-600 rounded-2xl p-4 space-y-3">
+      <h3 className="text-sm font-medium text-slate-300">{title}</h3>
+      {children}
     </div>
   )
 }
 
-export default function Stats() {
-  const [monthlyData, setMonthlyData] = useState<any[]>([])
+export default function StatsPage() {
+  const [rows, setRows] = useState<Row[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState<30 | 90>(30)
 
   useEffect(() => {
-    Promise.all([fetchMonthlyStats(6), fetchEquipment()])
-      .then(([rows, eq]) => {
-        setMonthlyData(groupByMonth(rows as any))
-        setEquipment(eq)
-      })
+    setLoading(true)
+    Promise.all([fetchDetailedStats(period), fetchEquipment()])
+      .then(([r, eq]) => { setRows(r); setEquipment(eq) })
       .finally(() => setLoading(false))
-  }, [])
+  }, [period])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Spinner className="w-8 h-8" />
-      </div>
-    )
-  }
+  if (loading) return <div className="flex justify-center py-16"><Spinner className="w-8 h-8" /></div>
 
-  const equipmentPie = equipment.slice(0, 7).map((eq, i) => ({
-    name: eq.name,
-    value: 1,
-    color: COLORS[i % COLORS.length],
-  }))
+  const daily = groupByDay(rows, period)
+  const weekly = groupByWeek(rows)
+  const byEquipment = groupByField(rows, 'equipment_name')
+  const byTestItem = groupByField(rows, 'test_item')
+  const byProject = groupByField(rows, 'project_name')
+
+  const coloredBar = (data: { name: string; value: number }[]) =>
+    <Bar dataKey="value" name="건수" radius={[4, 4, 0, 0]}>
+      {data.map((_, i) => (
+        <rect key={i} fill={COLORS[i % COLORS.length]} />
+      ))}
+    </Bar>
 
   return (
-    <div className="overflow-y-auto px-4 pt-5 pb-6 space-y-6">
-      <h1 className="text-lg font-bold text-white">통계</h1>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">업무 통계</h1>
+          <p className="text-xs text-slate-400 mt-0.5">일간/주간/장비별 업무량 분석</p>
+        </div>
+        <div className="flex gap-1 bg-navy-800 border border-navy-600 rounded-lg p-1">
+          {([30, 90] as const).map(p => (
+            <button key={p} onClick={() => setPeriod(p)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${period === p ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              {p}일
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* 월별 업무일지 수 */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">월별 업무일지 건수</h2>
-        <div className="bg-navy-800 border border-navy-600 rounded-2xl p-4">
-          {monthlyData.length === 0 ? (
-            <p className="text-center text-slate-500 text-sm py-6">데이터가 없습니다.</p>
-          ) : (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card title={`일간 업무량 (최근 ${period}일)`}>
+          {daily.some(d => d.value > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={monthlyData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <LineChart data={daily} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#243048" />
-                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" name="업무일지" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} interval={Math.floor(daily.length / 6)} />
+                <YAxis tick={tick} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TooltipStyle} />
+                <Line type="monotone" dataKey="value" name="업무일지" stroke="#06b6d4" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
+        </Card>
+
+        <Card title="주간 업무량">
+          {weekly.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={weekly} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#243048" />
+                <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} />
+                <YAxis tick={tick} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TooltipStyle} />
+                <Bar dataKey="value" name="건수" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          )}
-        </div>
-      </section>
+          ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
+        </Card>
+      </div>
 
-      {/* 월별 샘플 수 */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">월별 샘플 처리 건수</h2>
-        <div className="bg-navy-800 border border-navy-600 rounded-2xl p-4">
-          {monthlyData.length === 0 ? (
-            <p className="text-center text-slate-500 text-sm py-6">데이터가 없습니다.</p>
-          ) : (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card title="장비별 업무량">
+          {byEquipment.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={monthlyData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#243048" />
-                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="samples" name="샘플 수" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              <BarChart data={byEquipment} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
+                <XAxis type="number" tick={tick} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={tick} width={72} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TooltipStyle} />
+                <Bar dataKey="value" name="건수" fill="#10b981" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          )}
-        </div>
-      </section>
+          ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
+        </Card>
+
+        <Card title="시험항목별">
+          {byTestItem.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={byTestItem} margin={{ top: 4, right: 4, left: -28, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#243048" />
+                <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={48} />
+                <YAxis tick={tick} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TooltipStyle} />
+                <Bar dataKey="value" name="건수" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
+        </Card>
+
+        <Card title="프로젝트별">
+          {byProject.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={byProject} margin={{ top: 4, right: 4, left: -28, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#243048" />
+                <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={48} />
+                <YAxis tick={tick} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={TooltipStyle} />
+                <Bar dataKey="value" name="건수" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
+        </Card>
+      </div>
 
       {/* 장비 목록 */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          등록 장비 ({equipment.length}대)
-        </h2>
-        <div className="space-y-2">
-          {equipment.length === 0 ? (
-            <p className="text-center text-slate-500 text-sm py-4">장비 데이터가 없습니다.</p>
-          ) : (
-            equipment.map((eq, i) => (
-              <div key={eq.id} className="bg-navy-800 border border-navy-600 rounded-xl px-4 py-3 flex items-center gap-3">
+      {equipment.length > 0 && (
+        <div className="bg-navy-800 border border-navy-600 rounded-2xl p-4 space-y-3">
+          <h3 className="text-sm font-medium text-slate-300">등록 장비 ({equipment.length}대)</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {equipment.map((eq, i) => (
+              <div key={eq.id} className="flex items-center gap-2.5 bg-navy-700/50 rounded-lg px-3 py-2">
                 <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{eq.name}</p>
-                  {eq.model && <p className="text-[11px] text-slate-400">{eq.model}</p>}
+                <div className="min-w-0">
+                  <p className="text-sm text-white truncate">{eq.name}</p>
+                  {eq.model && <p className="text-[10px] text-slate-400">{eq.model}</p>}
                 </div>
-                {eq.equipment_type && (
-                  <span className="text-[10px] bg-navy-700 text-slate-300 px-2 py-0.5 rounded-full flex-shrink-0">
-                    {eq.equipment_type}
-                  </span>
-                )}
+                {eq.equipment_type && <span className="ml-auto text-[10px] bg-navy-600 text-slate-300 px-2 py-0.5 rounded-full flex-shrink-0">{eq.equipment_type}</span>}
               </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {/* 파이차트: 장비 분포 (보조 시각화) */}
-      {equipmentPie.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">장비 분포</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-2xl p-4">
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={equipmentPie}
-                  cx="50%" cy="45%"
-                  innerRadius={50} outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {equipmentPie.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Legend
-                  iconType="circle"
-                  iconSize={8}
-                  formatter={(v) => <span className="text-[11px] text-slate-300">{v}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            ))}
           </div>
-        </section>
+        </div>
       )}
     </div>
   )
