@@ -447,26 +447,39 @@ export interface CalendarDayData {
 }
 
 export async function fetchCalendarWorkData(startDate: string, endDate: string): Promise<CalendarDayData[]> {
-  const { data } = await supabase
-    .from('work_logs')
-    .select('log_date,test_item,sample_count,project_name,equipment_name')
-    .gte('log_date', startDate)
-    .lte('log_date', endDate)
-    .order('log_date')
+  // samples 테이블 기반 집계 (PC와 동일한 방식)
+  const [{ data: samples }, { data: eqData }] = await Promise.all([
+    supabase
+      .from('samples')
+      .select('analysis_date,test_item,equipment_id,project_name')
+      .gte('analysis_date', startDate)
+      .lte('analysis_date', endDate)
+      .not('analysis_date', 'is', null),
+    supabase.from('equipment').select('id,name'),
+  ])
 
+  const eqMap = new Map<number, string>((eqData ?? []).map(e => [e.id, e.name]))
   const dayMap: Record<string, CalendarDayData> = {}
-  for (const row of (data ?? [])) {
-    const d = String(row.log_date).slice(0, 10)
+
+  for (const row of (samples ?? [])) {
+    const d = String(row.analysis_date).slice(0, 10)
+    const ti = row.test_item ?? 'Unknown'
     if (!dayMap[d]) dayMap[d] = { date: d, items: [], total_samples: 0 }
-    dayMap[d].items.push({
-      test_item: row.test_item ?? '',
-      sample_count: row.sample_count ?? 0,
-      project: row.project_name ?? '',
-      equipment: row.equipment_name ?? '',
-    })
-    dayMap[d].total_samples += row.sample_count ?? 0
+
+    const existing = dayMap[d].items.find(i => i.test_item === ti)
+    if (existing) {
+      existing.sample_count += 1
+    } else {
+      dayMap[d].items.push({
+        test_item: ti,
+        sample_count: 1,
+        project: row.project_name ?? '',
+        equipment: eqMap.get(row.equipment_id) ?? '',
+      })
+    }
+    dayMap[d].total_samples += 1
   }
-  return Object.values(dayMap)
+  return Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date))
 }
 
 // ── 대시보드 전체 데이터 ───────────────────────────────────────────────────────
