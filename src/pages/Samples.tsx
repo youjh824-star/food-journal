@@ -166,10 +166,8 @@ function SampleCard({ s, onEdit, onDelete }: {
             {s.sample_name || s.project_name || '(시료명 없음)'}
           </p>
 
-          {/* 의뢰명 + 시험항목 */}
+          {/* 시험항목 (업체명은 검색용으로만 사용, 카드에서 표시 제거) */}
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {s.project_name && <span className="text-cyan-400/80">{s.project_name}</span>}
-            {s.project_name && s.test_item && <span className="mx-1">·</span>}
             {s.test_item && <span>{s.test_item}</span>}
           </p>
         </div>

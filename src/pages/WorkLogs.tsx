@@ -117,6 +117,51 @@ function WorkLogForm({ initial, onSave, onCancel }: {
   )
 }
 
+// ── 프로젝트명 빠른 수정 모달 ────────────────────────────────────────────────
+function RenameModal({ log, onClose, onSave }: {
+  log: WorkLog; onClose: () => void; onSave: (id: number, name: string) => Promise<void>
+}) {
+  const [name, setName] = useState(log.project_name ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    try { await onSave(log.id, name) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}>
+      <div className="bg-navy-800 border border-navy-600 rounded-2xl w-full max-w-sm p-5 space-y-4"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">프로젝트명 수정</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <input
+          className={INPUT}
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="프로젝트명 입력"
+          autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') save() }}
+        />
+        <div className="flex gap-2">
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">
+            {saving ? '저장 중...' : '저장'}
+          </button>
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl bg-navy-700 hover:bg-navy-600 text-slate-300 text-sm font-medium transition-colors">
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 삭제 확인 모달 ───────────────────────────────────────────────────────────
 function DeleteModal({ log, onClose, onDelete }: {
   log: WorkLog; onClose: () => void; onDelete: (id: number, withSamples: boolean) => void
@@ -158,7 +203,7 @@ function DeleteModal({ log, onClose, onDelete }: {
 }
 
 // ── 행 카드 ─────────────────────────────────────────────────────────────────
-function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkLog) => void; onDelete: (id: number, withSamples: boolean) => void }) {
+function WorkLogRow({ log, onEdit, onRename, onDelete }: { log: WorkLog; onEdit: (l: WorkLog) => void; onRename: (l: WorkLog) => void; onDelete: (id: number, withSamples: boolean) => void }) {
   const [open, setOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   return (
@@ -203,9 +248,13 @@ function WorkLogRow({ log, onEdit, onDelete }: { log: WorkLog; onEdit: (l: WorkL
               )}
             </div>
             <div className="flex gap-2 pt-1 border-t border-navy-700">
+              <button onClick={(e) => { e.stopPropagation(); onRename(log) }}
+                className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                <Pencil className="w-3.5 h-3.5" />이름수정
+              </button>
               <button onClick={(e) => { e.stopPropagation(); onEdit(log) }}
                 className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                <Pencil className="w-3.5 h-3.5" />수정
+                <Save className="w-3.5 h-3.5" />전체수정
               </button>
               <button onClick={(e) => { e.stopPropagation(); setShowDeleteModal(true) }}
                 className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-colors ml-auto">
@@ -232,6 +281,7 @@ export default function WorkLogs() {
   const [hasMore, setHasMore] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editTarget, setEditTarget] = useState<WorkLog | null>(null)
+  const [renameTarget, setRenameTarget] = useState<WorkLog | null>(null)
   const PAGE_SIZE = 20
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
@@ -281,8 +331,18 @@ export default function WorkLogs() {
 
   const startEdit = (log: WorkLog) => { setEditTarget(log); setShowForm(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
+  const handleRename = async (id: number, name: string) => {
+    await updateWorkLog(id, { project_name: name })
+    setLogs(prev => prev.map(l => l.id === id ? { ...l, project_name: name } : l))
+    setRenameTarget(null)
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {renameTarget && (
+        <RenameModal log={renameTarget} onClose={() => setRenameTarget(null)} onSave={handleRename} />
+      )}
+
       {/* 헤더 */}
       <div className="px-4 pt-5 pb-3 bg-[#0f172a] border-b border-navy-700 space-y-3">
         <div className="flex items-center justify-between">
@@ -337,7 +397,7 @@ export default function WorkLogs() {
           <div className="text-center py-12 text-slate-500 text-sm">검색 결과가 없습니다.</div>
         )}
         {logs.map(log => (
-          <WorkLogRow key={log.id} log={log} onEdit={startEdit} onDelete={handleDelete} />
+          <WorkLogRow key={log.id} log={log} onEdit={startEdit} onRename={setRenameTarget} onDelete={handleDelete} />
         ))}
         {hasMore && (
           <button onClick={loadMore} disabled={loading}
