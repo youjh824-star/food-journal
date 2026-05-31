@@ -93,17 +93,24 @@ function ViewerModal({ method, onClose }: { method: ExperimentMethod; onClose: (
           )}
           {!cfg && (
             <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-slate-400">
-              <div className="text-4xl">{fileIcon(type)}</div>
-              <p className="text-sm text-center text-white">{method.file_name}</p>
-              <p className="text-xs text-center opacity-60">
-                이 파일 형식은 브라우저에서 직접 볼 수 없습니다.
-                {!method.file_url && <><br />PC에서 파일을 Supabase에 업로드하면 뷰어를 사용할 수 있습니다.</>}
-              </p>
-              {method.file_url && (
-                <a href={method.file_url} download={method.file_name} target="_blank" rel="noreferrer"
-                  className="flex items-center gap-2 bg-cyan-600 text-white px-4 py-2 rounded-xl text-sm font-medium">
-                  <Download className="w-4 h-4" />다운로드
-                </a>
+              <div className="opacity-40">{fileIcon(type)}</div>
+              <p className="text-sm text-center text-white font-medium">{method.file_name || method.title}</p>
+              {!method.file_url ? (
+                <div className="text-center space-y-2">
+                  <p className="text-xs text-slate-400 bg-navy-800 rounded-xl px-4 py-3 leading-relaxed">
+                    파일 URL이 없습니다.<br />
+                    PC에서 <span className="text-cyan-400 font-mono">upload_methods_to_storage.py</span>를<br />
+                    실행하면 모바일에서도 볼 수 있습니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center space-y-3">
+                  <p className="text-xs text-slate-500">이 파일 형식은 브라우저에서 직접 볼 수 없습니다.</p>
+                  <a href={method.file_url} download={method.file_name} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-2 bg-cyan-600 text-white px-4 py-2 rounded-xl text-sm font-medium">
+                    <Download className="w-4 h-4" />다운로드
+                  </a>
+                </div>
               )}
             </div>
           )}
@@ -184,19 +191,21 @@ export default function Methods() {
                   {m.file_size ? <span className="text-[10px] text-slate-500">{fmt(m.file_size)}</span> : null}
                 </div>
               </div>
-              {canView ? (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {/* 뷰어 버튼 - URL 있으면 보기, 없으면 클릭해도 모달에서 안내 */}
                 <button onClick={() => setViewing(m)}
-                  className="flex-shrink-0 text-xs bg-cyan-600 text-white px-3 py-1.5 rounded-lg font-medium">
+                  className={clsx('text-xs px-3 py-1.5 rounded-lg font-medium',
+                    canView ? 'bg-cyan-600 text-white' : 'bg-navy-700 text-slate-400 border border-navy-600')}>
                   보기
                 </button>
-              ) : (
-                m.file_url && (
+                {/* 다운로드 버튼 */}
+                {m.file_url && (
                   <a href={m.file_url} download={m.file_name} target="_blank" rel="noreferrer"
-                    className="flex-shrink-0 text-xs bg-navy-700 text-slate-300 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
-                    <Download className="w-3 h-3" />
+                    className="p-1.5 rounded-lg bg-navy-700 text-slate-400 hover:text-white transition-colors">
+                    <Download className="w-3.5 h-3.5" />
                   </a>
-                )
-              )}
+                )}
+              </div>
             </div>
           )
         })}
