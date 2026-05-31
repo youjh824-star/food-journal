@@ -589,7 +589,7 @@ export async function fetchDetailedStats(days = 30) {
   const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
   const { data } = await supabase
     .from('work_logs')
-    .select('log_date,sample_count,workload,equipment_name,test_item,project_name,duration_hours')
+    .select('log_date,sample_count,workload,equipment_name,test_item,project_name,duration_hours,source_file')
     .gte('log_date', from)
     .order('log_date')
   return (data ?? []) as Array<{
@@ -600,5 +600,81 @@ export async function fetchDetailedStats(days = 30) {
     test_item?: string
     project_name?: string
     duration_hours?: number
+    source_file?: string
   }>
+}
+
+// 샘플 기반 정밀 통계 (test_item, equipment, project 별 정확한 건수)
+export async function fetchSampleStats(days = 30) {
+  const from = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+
+  // 장비 목록 캐시
+  const { data: eqData } = await supabase.from('equipment').select('id,name')
+  const eqMap = new Map<number, string>((eqData ?? []).map(e => [e.id, e.name]))
+
+  // 해당 기간 source_file 목록 (work_logs 기준)
+  const { data: logData } = await supabase
+    .from('work_logs')
+    .select('source_file')
+    .gte('log_date', from)
+  const sourceFiles = [...new Set((logData ?? []).map(l => l.source_file).filter(Boolean))]
+
+  let samples: Array<{ test_item?: string; equipment_id?: number; project_name?: string }> = []
+
+  if (sourceFiles.length > 0) {
+    const { data: sData } = await supabase
+      .from('samples')
+      .select('test_item,equipment_id,project_name')
+      .in('source_file', sourceFiles)
+    samples = sData ?? []
+  } else {
+    // source_file 없으면 analysis_date 범위로 대체
+    const { data: sData } = await supabase
+      .from('samples')
+      .select('test_item,equipment_id,project_name')
+      .gte('analysis_date', from)
+    samples = sData ?? []
+  }
+
+  // 집계
+  const byEquipment = new Map<string, number>()
+  const byTestItem = new Map<string, number>()
+  const byProject = new Map<string, number>()
+
+  for (const s of samples) {
+    const eqName = eqMap.get(s.equipment_id ?? 0) ?? 'Unknown'
+    byEquipment.set(eqName, (byEquipment.get(eqName) ?? 0) + 1)
+    const ti = s.test_item ?? 'Unknown'
+    byTestItem.set(ti, (byTestItem.get(ti) ?? 0) + 1)
+    const proj = s.project_name ?? 'Unknown'
+    byProject.set(proj, (byProject.get(proj) ?? 0) + 1)
+  }
+
+  const toArr = (m: Map<string, number>, top = 8) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, top).map(([name, value]) => ({ name, value }))
+
+  return {
+    byEquipment: toArr(byEquipment),
+    byTestItem: toArr(byTestItem),
+    byProject: toArr(byProject),
+    total: samples.length,
+  }
+}
+
+// ── app_settings (sticky notes sync) ─────────────────────────────────────────
+
+export async function getAppSetting(key: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()
+  return data?.value ?? null
+}
+
+export async function setAppSetting(key: string, value: string): Promise<void> {
+  await supabase.from('app_settings').upsert(
+    { key, value, updated_at: new Date().toISOString() },
+    { onConflict: 'key' },
+  )
 }

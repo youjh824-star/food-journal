@@ -3,9 +3,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line,
 } from 'recharts'
-import { format, parseISO, startOfWeek, startOfDay } from 'date-fns'
+import { format, parseISO, startOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { fetchDetailedStats, fetchEquipment, Equipment } from '../lib/supabase'
+import { fetchDetailedStats, fetchSampleStats, fetchEquipment, Equipment } from '../lib/supabase'
 import Spinner from '../components/Spinner'
 
 const COLORS = ['#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#3b82f6', '#f97316']
@@ -15,13 +15,20 @@ const tick = { fill: '#94a3b8', fontSize: 11 }
 
 type Row = { log_date: string; sample_count?: number; workload?: number; equipment_name?: string; test_item?: string; project_name?: string }
 
+// sample_count 또는 workload 값 추출 (없으면 1)
+function rowValue(r: Row): number {
+  return r.sample_count ?? r.workload ?? 1
+}
+
 function groupByDay(rows: Row[], days = 30) {
   const map = new Map<string, number>()
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000)
     map.set(d.toISOString().slice(0, 10), 0)
   }
-  for (const r of rows) { map.set(r.log_date, (map.get(r.log_date) ?? 0) + 1) }
+  for (const r of rows) {
+    map.set(r.log_date, (map.get(r.log_date) ?? 0) + rowValue(r))
+  }
   return [...map.entries()].map(([date, value]) => ({
     name: format(parseISO(date), 'M/d'), value,
   }))
@@ -31,7 +38,7 @@ function groupByWeek(rows: Row[]) {
   const map = new Map<string, number>()
   for (const r of rows) {
     const w = format(startOfWeek(parseISO(r.log_date), { locale: ko }), 'M/d', { locale: ko })
-    map.set(w, (map.get(w) ?? 0) + 1)
+    map.set(w, (map.get(w) ?? 0) + rowValue(r))
   }
   return [...map.entries()].slice(-8).map(([name, value]) => ({ name, value }))
 }
@@ -40,7 +47,7 @@ function groupByField(rows: Row[], field: keyof Row, top = 8) {
   const map = new Map<string, number>()
   for (const r of rows) {
     const key = (r[field] as string) || '기타'
-    map.set(key, (map.get(key) ?? 0) + 1)
+    map.set(key, (map.get(key) ?? 0) + rowValue(r))
   }
   return [...map.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -57,16 +64,19 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   )
 }
 
+type SampleStats = { byEquipment: {name:string;value:number}[]; byTestItem: {name:string;value:number}[]; byProject: {name:string;value:number}[]; total: number }
+
 export default function StatsPage() {
   const [rows, setRows] = useState<Row[]>([])
+  const [sampleStats, setSampleStats] = useState<SampleStats | null>(null)
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<30 | 90>(30)
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchDetailedStats(period), fetchEquipment()])
-      .then(([r, eq]) => { setRows(r); setEquipment(eq) })
+    Promise.all([fetchDetailedStats(period), fetchSampleStats(period), fetchEquipment()])
+      .then(([r, ss, eq]) => { setRows(r); setSampleStats(ss); setEquipment(eq) })
       .finally(() => setLoading(false))
   }, [period])
 
@@ -74,9 +84,10 @@ export default function StatsPage() {
 
   const daily = groupByDay(rows, period)
   const weekly = groupByWeek(rows)
-  const byEquipment = groupByField(rows, 'equipment_name')
-  const byTestItem = groupByField(rows, 'test_item')
-  const byProject = groupByField(rows, 'project_name')
+  // 장비별/시험항목별/프로젝트별은 샘플 기반 정확한 집계 사용
+  const byEquipment = sampleStats?.byEquipment ?? groupByField(rows, 'equipment_name')
+  const byTestItem = sampleStats?.byTestItem ?? groupByField(rows, 'test_item')
+  const byProject = sampleStats?.byProject ?? groupByField(rows, 'project_name')
 
   const coloredBar = (data: { name: string; value: number }[]) =>
     <Bar dataKey="value" name="건수" radius={[4, 4, 0, 0]}>

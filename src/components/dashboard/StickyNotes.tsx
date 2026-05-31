@@ -1,16 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, X, Pin, ClipboardList, Cloud, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
+import { getAppSetting, setAppSetting } from '../../lib/supabase'
 
 interface Note { id: string; content: string; pinned: boolean; updatedAt: string }
-const STORAGE_KEY = 'lab_sticky_notes'
-const SYNC_KEY = 'lab_sticky_notes_synced'
-const DEFAULT_NOTES: Note[] = [{ id: '1', content: '2,4째주 금요일은 청소\n출근 9시 10분까지', pinned: true, updatedAt: new Date().toISOString() }]
+
+const NOTES_KEY = 'sticky_notes'
+const DEFAULT_NOTES: Note[] = [
+  { id: '1', content: '2,4째주 금요일은 청소\n출근 9시 10분까지', pinned: true, updatedAt: new Date().toISOString() },
+]
 
 function NoteEditor({ note, onSave, onCancel }: { note: Note; onSave: (c: string) => void; onCancel: () => void }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const composing = useRef(false)
-  useEffect(() => { ref.current?.focus(); const l = ref.current?.value.length ?? 0; ref.current?.setSelectionRange(l, l) }, [])
+  useEffect(() => {
+    ref.current?.focus()
+    const l = ref.current?.value.length ?? 0
+    ref.current?.setSelectionRange(l, l)
+  }, [])
   const save = () => { if (!composing.current) onSave(ref.current?.value ?? '') }
   return (
     <textarea ref={ref} defaultValue={note.content}
@@ -30,38 +37,59 @@ export default function StickyNotes() {
   const [showList, setShowList] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [lastSynced, setLastSynced] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
+  // Load from Supabase on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    const parsed: Note[] = saved ? JSON.parse(saved) : DEFAULT_NOTES
-    setNotes(parsed)
-    setActiveId(parsed.find(n => n.pinned)?.id ?? parsed[0]?.id ?? null)
-    setLastSynced(localStorage.getItem(SYNC_KEY))
+    getAppSetting(NOTES_KEY).then((val) => {
+      let parsed: Note[] = DEFAULT_NOTES
+      if (val) {
+        try { parsed = JSON.parse(val) } catch { /* ignore */ }
+      }
+      setNotes(parsed)
+      setActiveId(parsed.find(n => n.pinned)?.id ?? parsed[0]?.id ?? null)
+      if (val) setLastSynced(new Date().toISOString())
+    })
+  }, [])
+
+  const saveToSupabase = useCallback(async (updated: Note[]) => {
+    await setAppSetting(NOTES_KEY, JSON.stringify(updated))
+    setLastSynced(new Date().toISOString())
   }, [])
 
   const persist = useCallback((updated: Note[]) => {
-    setNotes(updated); localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
-  }, [])
+    setNotes(updated)
+    saveToSupabase(updated)
+  }, [saveToSupabase])
 
-  const sync = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
-    const now = new Date().toISOString(); localStorage.setItem(SYNC_KEY, now); setLastSynced(now)
+  const sync = async () => {
+    setSyncing(true)
+    await saveToSupabase(notes)
+    setSyncing(false)
   }
 
   const saveNote = (id: string, content: string) => {
-    setNotes(prev => { const u = prev.map(n => n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n); localStorage.setItem(STORAGE_KEY, JSON.stringify(u)); return u })
+    setNotes(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n)
+      saveToSupabase(updated)
+      return updated
+    })
     setEditingId(null)
   }
 
   const addNote = () => {
     const note: Note = { id: Date.now().toString(), content: '', pinned: false, updatedAt: new Date().toISOString() }
-    persist([note, ...notes]); setActiveId(note.id); setEditingId(note.id); setShowList(false)
+    persist([note, ...notes])
+    setActiveId(note.id)
+    setEditingId(note.id)
+    setShowList(false)
   }
 
   const deleteNote = (id: string) => {
     if (editingId === id) setEditingId(null)
-    const u = notes.filter(n => n.id !== id); persist(u)
-    if (activeId === id) setActiveId(u.find(n => n.pinned)?.id ?? u[0]?.id ?? null)
+    const updated = notes.filter(n => n.id !== id)
+    persist(updated)
+    if (activeId === id) setActiveId(updated.find(n => n.pinned)?.id ?? updated[0]?.id ?? null)
   }
 
   const togglePin = (id: string) => persist(notes.map(n => n.id === id ? { ...n, pinned: !n.pinned } : n))
@@ -83,8 +111,12 @@ export default function StickyNotes() {
       </div>
       {editingId === note.id
         ? <NoteEditor key={note.id} note={note} onSave={c => saveNote(note.id, c)} onCancel={() => setEditingId(null)} />
-        : <div role="button" tabIndex={0} className="w-full h-full cursor-text p-2.5 pt-7" onClick={() => { setEditingId(note.id); setActiveId(note.id) }} onKeyDown={e => { if (e.key === 'Enter') setEditingId(note.id) }}>
-            <p className="text-yellow-950 text-[11px] whitespace-pre-wrap font-medium leading-snug h-full overflow-hidden pointer-events-none">{note.content || '클릭하여 입력'}</p>
+        : <div role="button" tabIndex={0} className="w-full h-full cursor-text p-2.5 pt-7"
+            onClick={() => { setEditingId(note.id); setActiveId(note.id) }}
+            onKeyDown={e => { if (e.key === 'Enter') setEditingId(note.id) }}>
+            <p className="text-yellow-950 text-[11px] whitespace-pre-wrap font-medium leading-snug h-full overflow-hidden pointer-events-none">
+              {note.content || '클릭하여 입력'}
+            </p>
           </div>
       }
     </div>
@@ -112,8 +144,15 @@ export default function StickyNotes() {
         }
       </div>
       <div className="flex items-center justify-between px-3 py-2 border-t border-navy-600 bg-navy-900/40">
-        <div className="flex items-center gap-1.5 text-[10px] text-slate-500"><Cloud className="w-3 h-3" />{lastSynced ? <span>동기화됨 · {lastSynced.slice(0, 16)}</span> : <span>로컬 저장</span>}</div>
-        <button onClick={sync} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-slate-400 hover:text-cyan-400 hover:bg-navy-700 transition-colors"><RefreshCw className="w-3 h-3" />동기화</button>
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+          <Cloud className="w-3 h-3" />
+          {lastSynced ? <span>Synced · {lastSynced.slice(0, 19)}</span> : <span>Loading...</span>}
+        </div>
+        <button onClick={sync} disabled={syncing}
+          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-slate-400 hover:text-cyan-400 hover:bg-navy-700 transition-colors disabled:opacity-50">
+          <RefreshCw className={clsx('w-3 h-3', syncing && 'animate-spin')} />
+          {syncing ? 'Saving...' : 'Sync'}
+        </button>
       </div>
     </div>
   )
