@@ -39,8 +39,8 @@ function itemToForm(item: TodoItem): Form {
     title: item.title,
     schedule_type: (item.schedule_type ?? 'once') as ScheduleType,
     priority: item.priority ?? 'normal',
-    notes: item.notes ?? '',
-    due_date: '',
+    notes: item.description ?? '',
+    due_date: item.due_date ?? '',
     recurrence_weekday: item.recurrence_weekday ?? 0,
     recurrence_day: item.recurrence_day ?? 1,
   }
@@ -145,10 +145,11 @@ export default function TodosPage() {
       title: form.title,
       schedule_type: form.schedule_type,
       priority: form.priority,
-      notes: form.notes || undefined,
+      description: form.notes || undefined,
+      due_date: form.schedule_type === 'once' && form.due_date ? form.due_date : undefined,
       recurrence_weekday: form.schedule_type === 'weekly' ? form.recurrence_weekday : undefined,
       recurrence_day: form.schedule_type === 'monthly' ? form.recurrence_day : undefined,
-      is_done: false,
+      completed: false,
     })
     setForm(emptyForm()); setShowForm(false); load()
   }
@@ -159,7 +160,8 @@ export default function TodosPage() {
       title: editForm.title,
       schedule_type: editForm.schedule_type,
       priority: editForm.priority,
-      notes: editForm.notes || undefined,
+      description: editForm.notes || undefined,
+      due_date: editForm.schedule_type === 'once' && editForm.due_date ? editForm.due_date : undefined,
       recurrence_weekday: editForm.schedule_type === 'weekly' ? editForm.recurrence_weekday : undefined,
       recurrence_day: editForm.schedule_type === 'monthly' ? editForm.recurrence_day : undefined,
     })
@@ -167,9 +169,10 @@ export default function TodosPage() {
   }
 
   const toggleDone = async (item: TodoItem) => {
+    const nowDone = !item.completed
     await updateTodo(item.id, {
-      is_done: !item.is_done,
-      done_date: !item.is_done ? new Date().toISOString().slice(0, 10) : undefined,
+      completed: nowDone,
+      last_completed_date: nowDone ? new Date().toISOString().slice(0, 10) : undefined,
     })
     load()
   }
@@ -187,12 +190,12 @@ export default function TodosPage() {
   }
 
   const displayed = items.filter(i => {
-    if (filter === 'pending') return !i.is_done
-    if (filter === 'done')    return i.is_done
+    if (filter === 'pending') return !i.completed
+    if (filter === 'done')    return i.completed
     return true
   })
-  const pending = items.filter(i => !i.is_done)
-  const done    = items.filter(i => i.is_done)
+  const pending = items.filter(i => !i.completed)
+  const done    = items.filter(i => i.completed)
 
   if (loading) return <div className="flex justify-center py-16"><Spinner className="w-8 h-8" /></div>
 
@@ -253,19 +256,19 @@ export default function TodosPage() {
           return (
             <div key={item.id}
               className={clsx('bg-navy-800 border rounded-xl p-4 flex items-start gap-3 transition-opacity',
-                PRIORITY_COLORS[item.priority], item.is_done && 'opacity-60')}>
+                PRIORITY_COLORS[item.priority], item.completed && 'opacity-60')}>
               {/* 체크 버튼 */}
               <button onClick={() => toggleDone(item)}
                 className={clsx('mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors',
-                  item.is_done
+                  item.completed
                     ? 'bg-emerald-500 border-emerald-500 hover:opacity-80'
                     : 'border-current text-slate-400 hover:bg-current/20')}>
-                {item.is_done && <Check className="w-3 h-3 text-white" />}
+                {item.completed && <Check className="w-3 h-3 text-white" />}
               </button>
 
               {/* 내용 */}
               <div className="flex-1 min-w-0">
-                <p className={clsx('text-sm font-medium', item.is_done ? 'line-through text-slate-400' : 'text-white')}>
+                <p className={clsx('text-sm font-medium', item.completed ? 'line-through text-slate-400' : 'text-white')}>
                   {item.title}
                 </p>
                 <div className="flex flex-wrap gap-1.5 mt-1">
@@ -283,14 +286,14 @@ export default function TodosPage() {
                     </span>
                   )}
                 </div>
-                {item.notes && <p className="text-xs text-slate-500 mt-1">{item.notes}</p>}
-                {item.is_done && item.done_date && (
-                  <p className="text-[10px] text-slate-600 mt-1">완료: {item.done_date}</p>
+                {item.description && <p className="text-xs text-slate-500 mt-1">{item.description}</p>}
+                {item.completed && item.last_completed_date && (
+                  <p className="text-[10px] text-slate-600 mt-1">완료: {item.last_completed_date}</p>
                 )}
               </div>
 
               {/* 수정/삭제 버튼 */}
-              {!item.is_done && (
+              {!item.completed && (
                 <button onClick={() => startEdit(item)}
                   className="p-1.5 text-slate-500 hover:text-cyan-400 flex-shrink-0 transition-colors">
                   <Pencil className="w-3.5 h-3.5" />

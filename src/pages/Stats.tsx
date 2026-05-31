@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line,
 } from 'recharts'
 import { format, parseISO, startOfWeek } from 'date-fns'
@@ -89,10 +89,10 @@ export default function StatsPage() {
   const byTestItem = sampleStats?.byTestItem ?? groupByField(rows, 'test_item')
   const byProject = sampleStats?.byProject ?? groupByField(rows, 'project_name')
 
-  const coloredBar = (data: { name: string; value: number }[]) =>
-    <Bar dataKey="value" name="건수" radius={[4, 4, 0, 0]}>
-      {data.map((_, i) => (
-        <rect key={i} fill={COLORS[i % COLORS.length]} />
+  const coloredBar = (data: { name: string; value: number }[], radius: [number, number, number, number] = [4, 4, 0, 0]) =>
+    <Bar dataKey="value" name="건수" radius={radius} minPointSize={4} fill={COLORS[0]}>
+      {data.map((entry, i) => (
+        <Cell key={`${entry.name}-${i}`} fill={COLORS[i % COLORS.length]} />
       ))}
     </Bar>
 
@@ -136,7 +136,7 @@ export default function StatsPage() {
                 <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} />
                 <YAxis tick={tick} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={TooltipStyle} />
-                <Bar dataKey="value" name="건수" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                {coloredBar(weekly)}
               </BarChart>
             </ResponsiveContainer>
           ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
@@ -151,7 +151,7 @@ export default function StatsPage() {
                 <XAxis type="number" tick={tick} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={tick} width={72} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={TooltipStyle} />
-                <Bar dataKey="value" name="건수" fill="#10b981" radius={[0, 4, 4, 0]} />
+                {coloredBar(byEquipment, [0, 4, 4, 0])}
               </BarChart>
             </ResponsiveContainer>
           ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
@@ -165,7 +165,7 @@ export default function StatsPage() {
                 <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={48} />
                 <YAxis tick={tick} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={TooltipStyle} />
-                <Bar dataKey="value" name="건수" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                {coloredBar(byTestItem)}
               </BarChart>
             </ResponsiveContainer>
           ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}
@@ -179,7 +179,7 @@ export default function StatsPage() {
                 <XAxis dataKey="name" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-15} textAnchor="end" height={48} />
                 <YAxis tick={tick} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={TooltipStyle} />
-                <Bar dataKey="value" name="건수" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                {coloredBar(byProject)}
               </BarChart>
             </ResponsiveContainer>
           ) : <p className="text-center text-slate-500 text-sm py-6">데이터 없음</p>}

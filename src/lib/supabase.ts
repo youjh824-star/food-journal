@@ -366,13 +366,14 @@ export async function deleteReagent(id: number) {
 export interface TodoItem {
   id: number
   title: string
+  description?: string
+  due_date?: string
   schedule_type: string
   priority: string
-  is_done: boolean
-  done_date?: string
+  completed: boolean
+  last_completed_date?: string
   recurrence_weekday?: number
   recurrence_day?: number
-  notes?: string
   created_at: string
 }
 
@@ -519,7 +520,7 @@ export async function fetchDashboardFull(): Promise<DashboardFullData> {
     supabase.from('work_logs').select('sample_count,workload').eq('log_date', today),
     supabase.from('work_logs').select('log_date,sample_count,workload,test_item').gte('log_date', weekAgo),
     supabase.from('work_logs').select('sample_count,workload,test_item').gte('log_date', monthAgo),
-    supabase.from('todo_items').select('id,title,priority,is_done,schedule_type,recurrence_weekday').order('priority').order('created_at'),
+    supabase.from('todo_items').select('id,title,priority,completed,schedule_type,recurrence_weekday').order('priority').order('created_at'),
     supabase.from('equipment_issues').select('id,title,issue_type,status').eq('status', 'open').order('created_at', { ascending: false }).limit(10),
     supabase.from('reagents').select('id,name,expiry_date').lte('expiry_date', in30Days).gte('expiry_date', today).order('expiry_date').limit(10),
     supabase.from('equipment_issues').select('id,equipment_id,status').eq('status', 'open'),
@@ -534,10 +535,10 @@ export async function fetchDashboardFull(): Promise<DashboardFullData> {
     ? Math.round(((allEquipmentIssues.data?.length ?? 0) / monthLogsRes.data.length) * 100)
     : 0
 
-  // Today's todos: 'daily', or weekly matching today's weekday, or 'once' not done
+  // 오늘의 할일: 매일, 오늘 요일 매주, 미완료 1회
   const allTodos = (todosRes.data ?? []) as TodoItem[]
   const todayTodos = allTodos.filter(t => {
-    if (t.is_done) return false
+    if (t.completed) return false
     if (t.schedule_type === 'daily') return true
     if (t.schedule_type === 'weekly' && t.recurrence_weekday === todayDow) return true
     if (t.schedule_type === 'once') return true
@@ -587,7 +588,7 @@ export async function fetchDashboardFull(): Promise<DashboardFullData> {
 
   return {
     kpi: { today_workload: todayWorkload, week_workload: weekWorkload, month_workload: monthWorkload, retest_rate: retestRate },
-    todos: todayTodos.map(t => ({ id: t.id, title: t.title, priority: t.priority, completed: t.is_done })),
+    todos: todayTodos.map(t => ({ id: t.id, title: t.title, priority: t.priority, completed: t.completed })),
     anomalies,
     expiring_reagents: expiringReagents,
     insights,
