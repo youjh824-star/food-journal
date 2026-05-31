@@ -229,8 +229,11 @@ export async function fetchSamples(opts: {
   search?: string
   page?: number
   pageSize?: number
+  test_item?: string
+  abnormal_only?: boolean
+  retest_only?: boolean
 }): Promise<{ data: Sample[]; count: number }> {
-  const { search, page = 0, pageSize = 20 } = opts
+  const { search, page = 0, pageSize = 30, test_item, abnormal_only, retest_only } = opts
   let q = supabase
     .from('samples')
     .select('*', { count: 'exact' })
@@ -242,8 +245,26 @@ export async function fetchSamples(opts: {
       `project_name.ilike.%${search}%,sample_name.ilike.%${search}%,sample_id.ilike.%${search}%,test_item.ilike.%${search}%,receipt_number.ilike.%${search}%`
     )
   }
+  if (test_item) q = q.eq('test_item', test_item)
+  if (abnormal_only) q = q.eq('is_abnormal', true)
+  if (retest_only) q = q.eq('is_retest', true)
   const { data, count } = await q
   return { data: (data ?? []) as Sample[], count: count ?? 0 }
+}
+
+export async function fetchSampleTestItems(): Promise<{ name: string; count: number }[]> {
+  const { data } = await supabase
+    .from('samples')
+    .select('test_item')
+  if (!data) return []
+  const counts: Record<string, number> = {}
+  for (const row of data) {
+    const ti = row.test_item ?? 'Unknown'
+    counts[ti] = (counts[ti] ?? 0) + 1
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }))
 }
 
 // ── 장비 ─────────────────────────────────────────────────────────────────────
